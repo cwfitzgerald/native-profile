@@ -27,26 +27,26 @@ and an optional `--filter` regex to focus on a subsystem (e.g. `wgpu`).
 
 ## Usage
 
-Run without installing via `uvx`:
+Run without installing, straight from the public git repo, via `uvx`:
 
 ```sh
 # Build the profiling profile, record a cargo example, and digest it:
-uvx --from /path/to/native-profile native-profile run \
+uvx --from git+https://github.com/cwfitzgerald/native-profile native-profile run \
     --manifest-path /path/to/project/Cargo.toml \
     --example my_example --duration 10 \
     --filter '^(wgpu|naga|ash|d3d12)'
 
 # Re-analyze an existing trace with a different filter (no re-recording):
-uvx --from /path/to/native-profile native-profile analyze trace.json.gz --filter '^bevy_ecs'
+uvx --from git+https://github.com/cwfitzgerald/native-profile native-profile analyze trace.json.gz --filter '^bevy_ecs'
 
 # Profile an arbitrary prebuilt binary (skips cargo):
-uvx --from /path/to/native-profile native-profile run --exe ./target/release/mytool -- --some arg
+uvx --from git+https://github.com/cwfitzgerald/native-profile native-profile run --exe ./target/release/mytool -- --some arg
 ```
 
 Or install once for a short command:
 
 ```sh
-uv tool install --from /path/to/native-profile native-profile
+uv tool install --from git+https://github.com/cwfitzgerald/native-profile native-profile
 native-profile run --example my_example -d 10
 ```
 
@@ -64,4 +64,4 @@ Program arguments for the profiled binary go after `--`.
 and print a short summary. Times are **CPU time** (from samply's `threadCPUDelta`, in µs,
 clamped to wall-clock), aggregated across all threads.
 
-See [`SKILL.md`](SKILL.md) for the agent-facing workflow and interpretation guide.
+See [`SKILL.md`](.claude/skills/native-profile/SKILL.md) for the agent-facing workflow and interpretation guide.

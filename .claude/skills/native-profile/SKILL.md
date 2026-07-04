@@ -22,14 +22,14 @@ and writes an `analysis.json` + `analysis.md` digest you can read directly.
 
 ## Invocation
 
-Use `native-profile` directly if it is on PATH. Otherwise run it from this repo (the
-directory containing this SKILL.md):
+Use `native-profile` directly if it is on PATH. Otherwise run it straight from the public
+git repository (no checkout needed):
 
 ```sh
-uvx --from <path-to-this-repo> native-profile <subcommand> ...
+uvx --from git+https://github.com/cwfitzgerald/native-profile native-profile <subcommand> ...
 ```
 
-Optional one-time install: `uv tool install --from <path-to-this-repo> native-profile`.
+Optional one-time install: `uv tool install --from git+https://github.com/cwfitzgerald/native-profile native-profile`.
 
 ## Workflow
 
