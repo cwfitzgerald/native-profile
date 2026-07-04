@@ -1,0 +1,20 @@
+[project]
+name = "native-profile"
+version = "0.1.0"
+description = "End-to-end sampled CPU profiling of native binaries for LLM-driven iteration: build with a debug-enabled cargo profile, record with samply, symbolicate with llvm-symbolizer, and emit a digestible JSON + Markdown analysis. Vibe coded."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT OR Apache-2.0" }
+dependencies = [
+    "tomlkit>=0.12",
+]
+
+[project.scripts]
+native-profile = "native_profile.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/native_profile"]
