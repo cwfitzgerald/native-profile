@@ -40,9 +40,9 @@ Optional one-time install: `uv tool install --from git+https://github.com/cwfitz
        --filter '<regex>'
    ```
 
-   - Target selection: `--example`, `--bin`, `--package`/`-p`; also `--features`,
-     `--no-default-features`, and repeatable `--cargo-arg` for any other cargo build
-     flag. `--manifest-path` defaults to `./Cargo.toml`.
+   - Target selection: `--example`, `--bin`, `--bench`, `--package`/`-p`; also
+     `--features`, `--no-default-features`, and repeatable `--cargo-arg` for any other
+     cargo build flag. `--manifest-path` defaults to `./Cargo.toml`.
    - **Programs that never exit on their own (games, servers) need `--duration N`**; a
      benchmark that exits by itself does not.
    - Args for the profiled program go after `--`: `... --bin foo -- --iterations 1000`.
@@ -52,6 +52,23 @@ Optional one-time install: `uv tool install --from git+https://github.com/cwfitz
      `[profile.profiling]` with `inherits = "release"`, `debug = true`, `strip = false`.
      `--no-ensure` skips the edit; `--profile NAME` uses a different cargo profile.
      Never profile a stripped or debug-less build — you get addresses with no names.
+
+   > **`--bench` is mandatory for criterion benchmarks — do not skip this.** A
+   > criterion (or libtest) harness only *benchmarks* when it receives `--bench`;
+   > without it, it runs each benchmark exactly once as a test ("Testing foo/bar" /
+   > "Success") and exits in well under a second. The recording still "succeeds" and
+   > produces a profile — it just measures nothing. This is the single most common way
+   > to waste a profiling run on this tool.
+   >
+   > - Building from source: use the `--bench NAME` target selector (not `--bin`/
+   >   `--example`). `native-profile` builds it and **automatically appends `--bench`**
+   >   to the profiled binary's args — no extra flag needed.
+   > - Prebuilt bench binary via `--exe`: you must add it yourself —
+   >   `native-profile run --exe <path/to/bench-binary> -- --bench`. The tool warns
+   >   loudly if `--exe` points at something under `target/*/deps/` (the raw,
+   >   un-renamed location cargo leaves bench/test artifacts in) without `--bench` in
+   >   the passthrough args, but it does not auto-add the flag for `--exe` since it
+   >   can't know the harness for certain.
 
 2. **Read the digest.** Output lands under `<proj>/target/native-profile/` (with
    `--exe`: `<exe-dir>/native-profile-out/`; override with `--out`): the trace
@@ -91,10 +108,17 @@ Optional one-time install: `uv tool install --from git+https://github.com/cwfitz
   - wgpu/graphics: `'^(wgpu|naga|ash|d3d12|gpu_alloc|gpu_descriptor|metal|glow)'`
   - one crate: `'^bevy_ecs'`; allocation: `'(alloc|dealloc|malloc|free)'`
 - Tables show `--top` rows (default 25).
-- **"not symbolicated (module-level only)"** = `llvm-symbolizer` was not found. Install
-  LLVM or point at it with `--llvm-symbolizer` / the `LLVM_SYMBOLIZER` env var, then
-  re-run `analyze` on the same trace — no re-record needed. (`rustup component add
-llvm-tools` does **not** provide `llvm-symbolizer`.)
+- **"Symbolicated: yes/NO"** in the digest carries a resolved/attempted address count,
+  e.g. `yes (1491/1518 addresses, 98.2%)`. Trust the count, not just the yes/no: it's
+  the fraction of reachable addresses in local (non-system) libraries that
+  llvm-symbolizer actually resolved to a name. **"not symbolicated (module-level
+  only)"** means either `llvm-symbolizer` was not found — install LLVM or point at it
+  with `--llvm-symbolizer` / the `LLVM_SYMBOLIZER` env var, then re-run `analyze` on the
+  same trace, no re-record needed (`rustup component add llvm-tools` does **not**
+  provide `llvm-symbolizer`) — or the resolve rate came back near zero despite a
+  symbolizer running, which the tool downgrades to NO rather than reporting a false
+  "yes"; check `notes` in `analysis.json`/`analysis.md` for the reason (mismatched/
+  rebuilt/stripped binary, or a load-bias bug).
 
 ## Gotchas
 
@@ -110,3 +134,11 @@ llvm-tools` does **not** provide `llvm-symbolizer`.)
   through `analyze`.
 - System modules are skipped during symbolication by default; `--symbolicate-system`
   exists but rarely helps (OS DLLs lack local debug info).
+- A digest note fires when total CPU time is under ~1s — implausibly short for a real
+  workload, and almost always means a criterion bench ran once as a test (see the
+  `--bench` warning above). If you see it, re-record with `--bench`.
+- On macOS, samply's addresses are RVAs but Mach-O's `__TEXT` segment loads at a
+  non-zero `vmaddr` (conventionally `0x100000000`, read from the binary's load
+  commands rather than assumed); the tool adds that bias before calling
+  `llvm-symbolizer`. Handled internally — but it is why the resolve-rate count is worth
+  reading: a wrong bias misses every lookup while every other signal looks healthy.

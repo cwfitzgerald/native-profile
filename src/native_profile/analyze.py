@@ -11,6 +11,14 @@ from .symbolize import Symbolizer
 
 _CRATE_RE = re.compile(r"([A-Za-z][A-Za-z0-9_]*)(?:::|\.\.)")
 
+# Below this fraction of addresses resolved, treat the run as effectively unsymbolicated
+# (e.g. wrong load bias, stripped/rebuilt binary) rather than reporting a false "yes".
+_MIN_RESOLVE_RATE = 0.02
+
+# Below this much total CPU time, a recorded profile is almost certainly noise rather
+# than a real workload -- most commonly a criterion bench run without `--bench`.
+_MIN_PLAUSIBLE_CPU_US = 1_000_000.0
+
 
 def crate_of(name: str) -> str:
     if name.startswith("["):  # module pseudo-frame, e.g. [ntdll.dll]
@@ -47,6 +55,8 @@ class Analysis:
     filter_incl: list[Row] = field(default_factory=list)
     filter_total_us: float = 0.0
     symbolicated: bool = True
+    resolved_addrs: int = 0
+    attempted_addrs: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -107,13 +117,27 @@ def analyze(
 
     # 2) Symbolicate each eligible lib once.
     sym_maps: dict[int, dict[int, list[str]]] = {}
+    attempted_addrs = 0
+    resolved_addrs = 0
     symbolicated = symbolizer is not None
     if symbolizer is not None:
         for lib_idx, (lib_name, path) in eligible.items():
             addrs = sorted(addrs_by_lib.get(lib_idx, ()))
             if not addrs:
                 continue
-            sym_maps[lib_idx] = symbolizer.symbolize(path, addrs)
+            m = symbolizer.symbolize(path, addrs)
+            sym_maps[lib_idx] = m
+            attempted_addrs += len(addrs)
+            resolved_addrs += sum(1 for a in addrs if m.get(a))
+        resolve_rate = (resolved_addrs / attempted_addrs) if attempted_addrs else 1.0
+        if attempted_addrs > 0 and resolve_rate < _MIN_RESOLVE_RATE:
+            symbolicated = False
+            notes.append(
+                f"symbolication resolved only {resolved_addrs}/{attempted_addrs} addresses "
+                f"({100 * resolve_rate:.1f}%) -- treating as unsymbolicated. Likely a wrong "
+                "load-bias calculation, a stripped binary, or a binary that no longer matches "
+                "the trace (rebuilt/deleted since recording)."
+            )
     else:
         notes.append(
             "llvm-symbolizer not found: results are MODULE-LEVEL only. Install LLVM "
@@ -280,6 +304,14 @@ def analyze(
                    if profile["threads"] and profile["threads"][0]["samples"].get("threadCPUDelta") is not None
                    else "sample count x interval")
 
+    if total_us < _MIN_PLAUSIBLE_CPU_US:
+        notes.append(
+            f"only {total_us / 1e6:.3f}s of CPU time recorded across all samples -- "
+            "implausibly short for a real workload. If this is a criterion benchmark, it "
+            "most likely ran once as a *test* rather than benchmarking: criterion needs the "
+            "`--bench` flag (`native-profile run --bench NAME`, or `--exe ... -- --bench`)."
+        )
+
     return Analysis(
         total_us=total_us,
         weight_mode=weight_mode,
@@ -296,5 +328,7 @@ def analyze(
         filter_incl=filter_incl,
         filter_total_us=filter_total_us,
         symbolicated=symbolicated,
+        resolved_addrs=resolved_addrs,
+        attempted_addrs=attempted_addrs,
         notes=notes,
     )

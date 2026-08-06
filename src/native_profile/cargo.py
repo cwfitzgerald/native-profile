@@ -92,6 +92,7 @@ def ensure_profiling_profile(
 class BuildSelector:
     example: str | None = None
     bin: str | None = None
+    bench: str | None = None
     package: str | None = None
     features: str | None = None
     no_default_features: bool = False
@@ -103,6 +104,8 @@ class BuildSelector:
             args += ["--example", self.example]
         if self.bin:
             args += ["--bin", self.bin]
+        if self.bench:
+            args += ["--bench", self.bench]
         if self.package:
             args += ["--package", self.package]
         if self.features:
@@ -113,7 +116,7 @@ class BuildSelector:
         return args
 
     def matches(self, target_names: list[str], kinds: list[str]) -> bool:
-        want = self.example or self.bin
+        want = self.example or self.bin or self.bench
         if want is None:
             return True
         if want not in target_names:
@@ -121,6 +124,8 @@ class BuildSelector:
         if self.example and "example" not in kinds:
             return False
         if self.bin and "bin" not in kinds:
+            return False
+        if self.bench and "bench" not in kinds:
             return False
         return True
 
@@ -173,3 +178,16 @@ def build_and_locate(
         )
     # The last matching artifact is the freshly linked target.
     return executables[-1]
+
+
+def looks_like_bench_binary(exe: Path) -> bool:
+    """Heuristic: is `exe` a raw cargo build artifact under `target/*/deps/`?
+
+    `--bin`/`--example` artifacts get copied out to `target/<profile>/` (and
+    `target/<profile>/examples/`); bench and test binaries are left un-renamed in
+    `deps/` with a `-<hash>` suffix and never copied out. Landing there is a strong
+    (not certain) signal that `exe` is a criterion/libtest harness binary that needs
+    `--bench` to actually benchmark instead of running once as a test.
+    """
+    parts = exe.parts
+    return "deps" in parts and "target" in parts

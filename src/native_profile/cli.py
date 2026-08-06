@@ -14,6 +14,7 @@ from .cargo import (
     build_and_locate,
     ensure_profiling_profile,
     find_cargo,
+    looks_like_bench_binary,
 )
 from .profile import load_profile
 from .report import to_json, to_markdown
@@ -47,8 +48,15 @@ def _run_analysis(trace: Path, args, out_dir: Path) -> int:
 
     print(f"\n[native-profile] total CPU {a.total_us/1e6:.2f}s ({a.weight_mode})")
     if not a.symbolicated:
-        print("[native-profile] WARNING: not symbolicated (module-level only). "
-              "Install llvm-symbolizer for function names.")
+        detail = ""
+        if a.attempted_addrs:
+            rate = 100 * a.resolved_addrs / a.attempted_addrs
+            detail = f" ({a.resolved_addrs}/{a.attempted_addrs} addresses, {rate:.1f}%)"
+        print(f"[native-profile] WARNING: not symbolicated (module-level only){detail}. "
+              "Install llvm-symbolizer for function names, or see analysis notes for why "
+              "resolution failed.")
+    for n in a.notes:
+        print(f"[native-profile] note: {n}")
     print("[native-profile] top self-time:")
     for r in a.self_rows[:8]:
         print(f"    {r.us/1e6:7.3f}s {r.pct:5.1f}%  {r.name[:88]}")
@@ -99,6 +107,7 @@ def cmd_run(args) -> int:
         selector = BuildSelector(
             example=args.example,
             bin=args.bin,
+            bench=args.bench,
             package=args.package,
             features=args.features,
             no_default_features=args.no_default_features,
@@ -106,6 +115,18 @@ def cmd_run(args) -> int:
         )
         exe = build_and_locate(cargo, manifest, selector, args.profile)
         print(f"[native-profile] built {exe}")
+        if args.bench and "--bench" not in args.prog_args:
+            # A criterion (or libtest) harness only benchmarks with --bench; without it
+            # it runs each benchmark once as a test and exits. We know this is a bench
+            # target, so add the flag rather than silently recording a meaningless profile.
+            args.prog_args = [*args.prog_args, "--bench"]
+            print("[native-profile] appended --bench to program args (criterion/libtest "
+                  "harnesses only benchmark with this flag; otherwise they run once as a test)")
+    elif looks_like_bench_binary(exe) and "--bench" not in args.prog_args:
+        print(f"[native-profile] WARNING: {exe} looks like a cargo bench/test artifact "
+              "(under target/*/deps/). If it's a criterion benchmark, it needs --bench "
+              "or it will run each benchmark once as a test and produce a meaningless "
+              "profile. Pass it after --, e.g.: ... --exe <path> -- --bench")
 
     out_dir = Path(args.out) if args.out else _default_out_dir(manifest, exe)
     samply = find_samply(args.samply)
@@ -147,6 +168,9 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--profile", default="profiling", help="cargo profile to build (default 'profiling')")
     pr.add_argument("--example", help="cargo --example NAME")
     pr.add_argument("--bin", help="cargo --bin NAME")
+    pr.add_argument("--bench", help="cargo --bench NAME; automatically appends --bench to the "
+                                     "profiled binary's args (criterion/libtest only benchmark "
+                                     "with that flag, else they run once as a test)")
     pr.add_argument("--package", "-p", help="cargo --package NAME")
     pr.add_argument("--features", help="cargo --features LIST")
     pr.add_argument("--no-default-features", action="store_true")

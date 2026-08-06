@@ -25,6 +25,8 @@ def to_json(a: Analysis) -> dict:
         "total_cpu_s": _s(a.total_us),
         "weight_mode": a.weight_mode,
         "symbolicated": a.symbolicated,
+        "resolved_addrs": a.resolved_addrs,
+        "attempted_addrs": a.attempted_addrs,
         "notes": a.notes,
         "threads": [{"name": n, "cpu_s": _s(us)} for n, us in a.threads[:20]],
         "self_by_function": [_row_json(r) for r in a.self_rows],
@@ -62,7 +64,11 @@ def to_markdown(a: Analysis) -> str:
     out.append(f"# Profile digest: {a.process}\n")
     out.append(f"- **Total CPU** (all threads): **{_s(a.total_us):.2f} s**")
     out.append(f"- **Weight**: {a.weight_mode}")
-    out.append(f"- **Symbolicated**: {'yes' if a.symbolicated else 'NO (module-level only)'}")
+    resolve_detail = ""
+    if a.attempted_addrs:
+        rate = 100 * a.resolved_addrs / a.attempted_addrs
+        resolve_detail = f" ({a.resolved_addrs}/{a.attempted_addrs} addresses, {rate:.1f}%)"
+    out.append(f"- **Symbolicated**: {'yes' if a.symbolicated else 'NO (module-level only)'}{resolve_detail}")
     if a.notes:
         for n in a.notes:
             out.append(f"- ⚠️ {n}")

@@ -6,3 +6,4 @@ build/
 *.egg-info/
 .native-profile/
 native-profile-out/
+target/
